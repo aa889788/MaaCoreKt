@@ -1,0 +1,4 @@
+[submodule "app/src/main/cpp/MaaAssistantArknights"]
+	path = maacore/src/main/cpp/MaaAssistantArknights
+	url = https://github.com/MaaAssistantArknights/MaaAssistantArknights.git
+	branch = dev
