@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <string>
+#include <unordered_set>
 
 #include "AsstCaller.h"
 
@@ -8,6 +9,8 @@ struct MaaHandle {
     jobject callbackObj;
     jmethodID callbackMethodId;
 };
+
+std::unordered_set<MaaHandle*> maa_handles;
 
 JavaVM *gJavaVM = nullptr;
 
@@ -27,13 +30,13 @@ void Maa_callback(AsstMsgId msg, const char *details_json, void *custom_arg) {
     if (custom_arg == nullptr) {
         return;
     }
+    auto *maa_handle = reinterpret_cast<MaaHandle *>(custom_arg);
+    if (maa_handle->callbackObj == nullptr) {
+        return;
+    }
     bool needDetach = false;
     JNIEnv *env = GetEnv(&needDetach);
     if (env == nullptr) {
-        return;
-    }
-    auto *maa_handle = reinterpret_cast<MaaHandle *>(custom_arg);
-    if (maa_handle->callbackObj == nullptr) {
         return;
     }
     jstring details_json_str = env->NewStringUTF(details_json);
@@ -67,7 +70,8 @@ jboolean MaaSetStaticOption(JNIEnv *env, jobject thiz, jint key, jstring value) 
 
 jlong MaaCreate(JNIEnv *env, jobject thiz) {
     auto *maa_handle = new MaaHandle();
-    maa_handle->handle = AsstCreate();
+    maa_handle->handle = AsstCreateEx(Maa_callback, maa_handle);
+    maa_handles.insert(maa_handle);
     return reinterpret_cast<jlong>(maa_handle);
 }
 
@@ -77,7 +81,21 @@ jlong MaaCreateEx(JNIEnv *env, jobject thiz, jobject callback) {
     jclass callbackClass = env->GetObjectClass(callback);
     maa_handle->callbackMethodId = env->GetMethodID(callbackClass, "callback", "(ILjava/lang/String;)V");
     maa_handle->handle = AsstCreateEx(Maa_callback, maa_handle);
+    maa_handles.insert(maa_handle);
     return reinterpret_cast<jlong>(maa_handle);
+}
+
+void MaaSetCallback(JNIEnv *env, jobject thiz, jlong handle, jobject callback) {
+    auto *maa_handle = reinterpret_cast<MaaHandle *>(handle);
+    if (maa_handle == nullptr) {
+        return;
+    }
+    if (maa_handle->callbackObj != nullptr) {
+        env->DeleteGlobalRef(maa_handle->callbackObj);
+    }
+    maa_handle->callbackObj = env->NewGlobalRef(callback);
+    jclass callbackClass = env->GetObjectClass(callback);
+    maa_handle->callbackMethodId = env->GetMethodID(callbackClass, "callback", "(ILjava/lang/String;)V");
 }
 
 void MaaDestroy(JNIEnv *env, jobject thiz, jlong handle) {
@@ -89,6 +107,7 @@ void MaaDestroy(JNIEnv *env, jobject thiz, jlong handle) {
     if (maa_handle->callbackObj != nullptr) {
         env->DeleteGlobalRef(maa_handle->callbackObj);
     }
+    maa_handles.erase(maa_handle);
     delete maa_handle;
 }
 
@@ -213,7 +232,8 @@ static const JNINativeMethod g_methods[] = {
         {"MaaLoadResources", "(Ljava/lang/String;)Z", (void *) MaaLoadResources},
         {"MaaSetStaticOption", "(ILjava/lang/String;)Z", (void *) MaaSetStaticOption},
         {"MaaCreate", "()J", (void *) MaaCreate},
-        {"MaaCreateWithCallBack", "(Lcom/maa/maacorekt/MaaCore$MaaCoreCallBack;)J", (void *) MaaCreateEx},
+        {"MaaCreateWithCallback", "(Lcom/maa/maacorekt/MaaCore$MaaCallback;)J", (void *) MaaCreateEx},
+        {"MaaSetCallback", "(JLcom/maa/maacorekt/MaaCore$MaaCallback;)V", (void *) MaaSetCallback},
         {"MaaDestroy", "(J)V", (void *) MaaDestroy},
         {"MaaSetInstanceOption", "(JILjava/lang/String;)Z", (void *) MaaSetInstanceOption},
         {"MaaConnect", "(JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", (void *) MaaConnect},
@@ -226,7 +246,6 @@ static const JNINativeMethod g_methods[] = {
         {"MaaAsyncConnect", "(JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)I", (void *) MaaAsyncConnect},
         {"MaaAsyncClick", "(JIIZ)I", (void *) MaaAsyncClick},
         {"MaaAsyncScreencap", "(JZ)I", (void *) MaaAsyncScreencap},
-
 };
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
@@ -243,4 +262,21 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
         return JNI_ERR;
     }
     return JNI_VERSION_1_6;
+}
+
+JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
+    JNIEnv *env = nullptr;
+    if (vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) == JNI_EDETACHED) {
+        return;
+    }
+    for (auto it = maa_handles.begin(); it != maa_handles.end(); ) {
+        auto *maa_handle = *it;
+        AsstDestroy(maa_handle->handle);
+        if (maa_handle->callbackObj != nullptr) {
+            env->DeleteGlobalRef(maa_handle->callbackObj);
+        }
+        delete maa_handle;
+        it = maa_handles.erase(it);
+    }
+    maa_handles.clear();
 }

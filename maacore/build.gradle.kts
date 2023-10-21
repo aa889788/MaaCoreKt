@@ -1,5 +1,4 @@
 import org.gradle.internal.os.OperatingSystem
-import java.util.Locale
 
 plugins {
     id("com.android.library")
@@ -59,6 +58,25 @@ android {
     buildFeatures {
         viewBinding = true
     }
+}
+
+tasks.register<Exec>("compileThrift") {
+    val thriftExecutable = file("src/main/cpp/MaaAssistantArknights/MaaDeps/vcpkg/installed/maa-${getHostTriplet()}/tools/thrift/thrift")
+    val thriftFile = file("src/main/cpp/MaaAssistantArknights/include/interfaces/ThriftController.thrift")
+    val outputDir = layout.buildDirectory.dir("generated-sources")
+    doFirst {
+        mkdir(outputDir)
+    }
+    commandLine = listOf(
+        thriftExecutable.absolutePath,
+        "-gen",
+        "java:android",
+        "-out",
+        outputDir.get().toString(),
+        thriftFile.absolutePath
+    )
+    android.sourceSets["main"].java.srcDir(outputDir)
+    dependsOn("install-maadeps")
 }
 
 fun getHostTriplet() : String {
@@ -144,14 +162,13 @@ tasks.register("install-maadeps") {
 
 tasks.preBuild {
     dependsOn("install-maadeps")
+    dependsOn("compileThrift")
 }
 
 dependencies {
 
-    implementation("androidx.core:core-ktx:1.9.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.9.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("org.apache.thrift:libthrift:0.16.0")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")

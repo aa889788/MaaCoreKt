@@ -2,8 +2,8 @@ package com.maa.maacorekt
 
 class MaaCore {
 
-    interface MaaCoreCallBack {
-        fun callback(msgType: Int, details: String)
+    interface MaaCallback {
+        fun callback(msgId: Int, details: String)
     }
 
     /**
@@ -14,7 +14,8 @@ class MaaCore {
     external fun MaaLoadResources(resDir: String): Boolean
     external fun MaaSetStaticOption(key: Int, value: String): Boolean
     external fun MaaCreate(): Long
-    external fun MaaCreateWithCallBack(callBack: MaaCoreCallBack): Long
+    external fun MaaCreateWithCallback(callBack: MaaCallback): Long
+    external fun MaaSetCallback(handle: Long, callback: MaaCallback)
     external fun MaaDestroy(instance: Long)
     external fun MaaSetInstanceOption(instance: Long, key: Int, value: String): Boolean
     external fun MaaConnect(instance: Long, adbPath: String, address: String, config: String): Boolean
